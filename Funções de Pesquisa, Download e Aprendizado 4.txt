@@ -1,0 +1,487 @@
+# --- Funções de Pesquisa e Download de Dados ---
+def search_knowledge(conn, query):
+    cursor = conn.cursor()
+    query_lower = f"%{query.lower()}%"
+
+    sql_content_search = """
+        SELECT
+            C.titulo,
+            C.conteudo,
+            C.tipo,
+            T.nome AS topico_nome,
+            A.nome AS area_nome,
+            CAT.nome AS categoria_nome,
+            C.palavras_chave
+        FROM conteudos C
+        LEFT JOIN topicos T ON C.id_topico = T.id
+        LEFT JOIN areas A ON T.id_area = A.id
+        LEFT JOIN categorias CAT ON A.id_categoria = CAT.id
+        WHERE LOWER(C.palavras_chave) LIKE ? OR
+              LOWER(C.titulo) LIKE ? OR
+              LOWER(C.conteudo) LIKE ? OR
+              LOWER(T.nome) LIKE ? OR
+              LOWER(A.nome) LIKE ? OR
+              LOWER(CAT.nome) LIKE ?
+        ORDER BY CAT.nome, A.nome, T.nome, C.titulo
+    """
+    cursor.execute(sql_content_search, (query_lower, query_lower, query_lower, query_lower, query_lower, query_lower))
+    results = cursor.fetchall()
+
+    if results:
+        for res in results:
+            titulo, conteudo, tipo, topico, area, categoria, palavras_chave = res
+            print_and_speak(f"\n--- Resultado Encontrado ---", "green")
+            print_and_speak(f"Categoria: {categoria if categoria else 'N/A'}", "magenta")
+            print_and_speak(f"Área: {area if area else 'N/A'}", "magenta")
+            print_and_speak(f"Tópico: {topico if topico else 'N/A'}", "magenta")
+            print_and_speak(f"Título: {titulo} (Tipo: {tipo})", "yellow")
+            print_and_speak(f"Palavras-chave: {palavras_chave if palavras_chave else 'N/A'}", "yellow")
+            print_and_speak("-" * (len(titulo) + len(tipo) + 10), "white")
+            print_and_speak(conteudo, "cyan")
+            print_and_speak("-" * 50, "white")
+            igris_speak(f"Encontrei sobre {titulo}. Está no tópico {topico if topico else 'não especificado'} na área de {area if area else 'não especificado'}.")
+        return True
+    else:
+        return False
+
+def show_all_categories(conn):
+    cursor = conn.cursor()
+    cursor.execute("SELECT nome, descricao FROM categorias ORDER BY nome")
+    categorias = cursor.fetchall()
+    if categorias:
+        print_and_speak(f"\n--- Categorias Disponíveis ---", "green")
+        response_text = "As categorias disponíveis são: "
+        for i, (nome, desc) in enumerate(categorias):
+            print_to_gui(f"- {nome}: {desc}", "white")
+            response_text += nome
+            if i < len(categorias) - 1:
+                response_text += ", "
+        igris_speak(response_text)
+    else:
+        print_and_speak("Nenhuma categoria encontrada.", "red")
+
+def show_areas_by_category(conn, category_name):
+    cursor = conn.cursor()
+    category_name_lower = category_name.lower()
+    sql = """
+        SELECT A.nome, A.descricao
+        FROM areas A
+        JOIN categorias C ON A.id_categoria = C.id
+        WHERE LOWER(C.nome) = ?
+        ORDER BY A.nome
+    """
+    cursor.execute(sql, (category_name_lower,))
+    areas = cursor.fetchall()
+    if areas:
+        print_and_speak(f"\n--- Áreas em '{category_name.capitalize()}' ---", "green")
+        response_text = f"Na categoria {category_name}, as áreas são: "
+        for i, (nome, desc) in enumerate(areas):
+            print_to_gui(f"- {nome}: {desc}", "white")
+            response_text += nome
+            if i < len(areas) - 1:
+                response_text += ", "
+        igris_speak(response_text)
+    else:
+        print_and_speak(f"Nenhuma área encontrada para a categoria '{category_name.capitalize()}'.", "red")
+
+def show_topics_by_area(conn, area_name):
+    cursor = conn.cursor()
+    area_name_lower = area_name.lower()
+    sql = """
+        SELECT T.nome, T.descricao
+        FROM topicos T
+        JOIN areas A ON T.id_area = A.id
+        WHERE LOWER(A.nome) = ?
+        ORDER BY T.nome
+    """
+    cursor.execute(sql, (area_name_lower,))
+    topicos = cursor.fetchall()
+    if topicos:
+        print_and_speak(f"\n--- Tópicos em '{area_name.capitalize()}' ---", "green")
+        response_text = f"Na área {area_name}, os tópicos são: "
+        for i, (nome, desc) in enumerate(topicos):
+            print_to_gui(f"- {nome}: {desc}", "white")
+            response_text += nome
+            if i < len(topicos) - 1:
+                response_text += ", "
+        igris_speak(response_text)
+    else:
+        print_and_speak(f"Nenhum tópico encontrado para a área '{area_name.capitalize()}'.", "red")
+
+def show_content_by_topic(conn, topic_name):
+    cursor = conn.cursor()
+    topic_name_lower = topic_name.lower()
+    sql = """
+        SELECT C.titulo, C.conteudo, C.tipo, C.palavras_chave
+        FROM conteudos C
+        JOIN topicos T ON C.id_topico = T.id
+        WHERE LOWER(T.nome) = ?
+        ORDER BY C.titulo
+    """
+    cursor.execute(sql, (topic_name_lower,))
+    contents = cursor.fetchall()
+    if contents:
+        print_and_speak(f"\n--- Conteúdo para o Tópico '{topic_name.capitalize()}' ---", "green")
+        for titulo, conteudo, tipo, palavras_chave in contents:
+            print_to_gui(f"\nTítulo: {titulo} (Tipo: {tipo})", "yellow")
+            print_to_gui(f"Palavras-chave: {palavras_chave if palavras_chave else 'N/A'}", "yellow")
+            print_to_gui("-" * (len(titulo) + len(tipo) + 10), "white")
+            print_to_gui(conteudo, "cyan")
+            igris_speak(f"Aqui está o conteúdo sobre {titulo}: {conteudo[:50]}...") # Fala as 50 primeiras letras
+            print_to_gui("-" * 50, "white")
+    else:
+        print_and_speak(f"Nenhum conteúdo encontrado para o tópico '{topic_name.capitalize()}'.", "red")
+
+def search_web(query):
+    """Abre o navegador com uma pesquisa no Google."""
+    search_url = f"https://www.google.com/search?q={urllib.parse.quote_plus(query)}"
+    print_and_speak(f"Abrindo navegador para pesquisar: '{query}'", "cyan")
+    webbrowser.open(search_url)
+
+def download_file_from_url(url, destination_folder="downloads"):
+    """Tenta baixar um arquivo de uma URL para uma pasta de destino."""
+    if not os.path.exists(destination_folder):
+        os.makedirs(destination_folder)
+        print_to_gui(f"Criando pasta de downloads: {destination_folder}", "green")
+
+    try:
+        file_name = os.path.basename(urllib.parse.urlparse(url).path)
+        if not file_name or "." not in file_name:
+            file_name = f"downloaded_file_{int(time.time())}.bin"
+        
+        destination_path = os.path.join(destination_folder, file_name)
+        
+        print_and_speak(f"Baixando '{url}' para '{destination_path}'...", "cyan")
+        urllib.request.urlretrieve(url, destination_path)
+        print_and_speak(f"Download concluído: '{destination_path}'", "green")
+    except Exception as e:
+        print_and_speak(f"Erro ao baixar arquivo de '{url}': {e}", "red")
+
+# --- Funções de Aprendizado e Pesquisa Ampla ---
+
+def get_web_content(url):
+    """
+    Tenta obter o texto principal de uma página web.
+    Retorna o texto limpo ou None em caso de erro.
+    """
+    if not web_analysis_enabled:
+        print_to_gui("Funcionalidade de análise web desativada. Instale 'requests' e 'beautifulsoup4'.", "red")
+        return None
+    
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'}
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status() # Lanca excecao para codigos de status de erro (4xx ou 5xx)
+
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Tenta extrair o texto de paragrafos comuns, que podem ser relevantes
+        paragraphs = soup.find_all('p')
+        content_text = ' '.join([p.get_text() for p in paragraphs])
+        
+        # Remove espacos extras e quebras de linha
+        content_text = re.sub(r'\s+', ' ', content_text).strip()
+        
+        return content_text
+    except requests.exceptions.RequestException as e:
+        print_to_gui(f"Erro ao acessar a URL {url}: {e}", "red")
+        return None
+    except Exception as e:
+        print_to_gui(f"Erro ao processar conteúdo da URL {url}: {e}", "red")
+        return None
+
+def suggest_category_area_topic(conn, query):
+    """
+    Sugere categorias, áreas e tópicos existentes com base na query.
+    Retorna (categoria_id, area_id, topico_id) ou None para cada um.
+    """
+    cursor = conn.cursor()
+    query_lower = f"%{query.lower()}%"
+    
+    suggested_cat_id = None
+    suggested_area_id = None
+    suggested_topic_id = None
+
+    # Tenta encontrar um tópico
+    cursor.execute("SELECT id, nome FROM topicos WHERE LOWER(nome) LIKE ?", (query_lower,))
+    topic_match = cursor.fetchone()
+    if topic_match:
+        suggested_topic_id = topic_match[0]
+        print_to_gui(f"Sugestão de tópico: {topic_match[1]}", "yellow")
+        
+        # Pega a area e categoria do topico
+        cursor.execute("SELECT id_area FROM topicos WHERE id = ?", (suggested_topic_id,))
+        area_id = cursor.fetchone()[0]
+        if area_id:
+            suggested_area_id = area_id
+            cursor.execute("SELECT nome, id_categoria FROM areas WHERE id = ?", (suggested_area_id,))
+            area_name, cat_id = cursor.fetchone()
+            suggested_cat_id = cat_id
+            print_to_gui(f"Sugestão de área: {area_name}", "yellow")
+            cursor.execute("SELECT nome FROM categorias WHERE id = ?", (suggested_cat_id,))
+            cat_name = cursor.fetchone()[0]
+            print_to_gui(f"Sugestão de categoria: {cat_name}", "yellow")
+        return suggested_cat_id, suggested_area_id, suggested_topic_id
+
+    # Se nao achou topico, tenta encontrar uma area
+    cursor.execute("SELECT id, nome, id_categoria FROM areas WHERE LOWER(nome) LIKE ?", (query_lower,))
+    area_match = cursor.fetchone()
+    if area_match:
+        suggested_area_id = area_match[0]
+        suggested_cat_id = area_match[2]
+        print_to_gui(f"Sugestão de área: {area_match[1]}", "yellow")
+        if suggested_cat_id:
+            cursor.execute("SELECT nome FROM categorias WHERE id = ?", (suggested_cat_id,))
+            cat_name = cursor.fetchone()[0]
+            print_to_gui(f"Sugestão de categoria: {cat_name}", "yellow")
+        return suggested_cat_id, suggested_area_id, None # Nao achou topico especifico
+
+    # Se nao achou area, tenta encontrar uma categoria
+    cursor.execute("SELECT id, nome FROM categorias WHERE LOWER(nome) LIKE ?", (query_lower,))
+    cat_match = cursor.fetchone()
+    if cat_match:
+        suggested_cat_id = cat_match[0]
+        print_to_gui(f"Sugestão de categoria: {cat_match[1]}", "yellow")
+        return suggested_cat_id, None, None
+
+    return None, None, None # Nenhuma sugestao
+
+def add_new_knowledge_to_db(conn, category_id, area_id, topic_id, title, content, keywords, content_type='explicacao'):
+    """Adiciona um novo conteudo ao banco de dados."""
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            INSERT INTO conteudos (id_topico, tipo, titulo, conteudo, palavras_chave)
+            VALUES (?, ?, ?, ?, ?)
+        """, (topic_id, content_type, title, content, keywords))
+        conn.commit()
+        print_and_speak(f"Novo conhecimento sobre '{title}' adicionado ao banco de dados!", "green")
+        return True
+    except sqlite3.Error as e:
+        print_and_speak(f"Erro ao adicionar conhecimento ao banco de dados: {e}", "red")
+        return False
+
+def confirm_and_add_knowledge(main_query, content_title, raw_content):
+    """
+    Guia o usuario para categorizar e adicionar novo conhecimento.
+    """
+    global admin_mode_enabled, conn, voice_input_enabled
+
+    if not admin_mode_enabled:
+        print_and_speak("Para adicionar novo conhecimento, o Modo Admin precisa estar ativado.", "yellow")
+        
+        # Pergunta por voz se deseja ativar o modo admin
+        if stt_enabled and voice_input_enabled:
+            print_and_speak("Deseja ativá-lo agora para adicionar este conhecimento? Diga 'sim' ou 'não'.", "yellow")
+            response_voice = listen_for_command(timeout_seconds=3, phrase_limit_seconds=2).lower()
+            if is_confirmation(response_voice):
+                toggle_admin_mode_gui()
+                if not admin_mode_enabled: # Se falhar, nao continua
+                    print_and_speak("Modo Admin não ativado. Operação cancelada.", "red")
+                    return
+            else:
+                print_and_speak("Operação de adicionar conhecimento cancelada.", "yellow")
+                return
+        else: # Se nao houver entrada de voz, usa messagebox
+            confirm = messagebox.askyesno("Modo Admin Necessário", "O Modo Admin não está ativo. Deseja ativá-lo agora para adicionar este conhecimento?")
+            if confirm:
+                toggle_admin_mode_gui() # Tenta ativar o modo admin
+                if not admin_mode_enabled: # Se falhar, nao continua
+                    print_and_speak("Modo Admin não ativado. Operação cancelada.", "red")
+                    return
+            else:
+                print_and_speak("Operação de adicionar conhecimento cancelada.", "yellow")
+                return
+
+    conn_learn = connect_db() # Abre uma nova conexao para a operacao de escrita
+    
+    print_to_gui(f"\n--- Sugestão de Novo Conhecimento ---", "yellow")
+    print_to_gui(f"Título sugerido: {content_title}", "yellow")
+    print_to_gui(f"Conteúdo (primeiras 200 chars): {raw_content[:200]}...", "yellow")
+    
+    print_and_speak(f"Encontrei uma possível nova informação sobre {content_title}. Gostaria de adicioná-la à minha base de dados? Diga 'sim' ou 'não'.", "yellow")
+    
+    add_confirm_voice = ""
+    if stt_enabled and voice_input_enabled:
+        add_confirm_voice = listen_for_command(timeout_seconds=3, phrase_limit_seconds=2).lower()
+        if not is_confirmation(add_confirm_voice):
+            print_and_speak("Adição de conhecimento cancelada.", "yellow")
+            conn_learn.close()
+            return
+    else: # Se nao houver entrada de voz, usa messagebox
+        add_confirm = messagebox.askyesno("Confirmar Novo Conhecimento",
+                                          f"Gostaria de adicionar '{content_title}' ao meu conhecimento?")
+        if not add_confirm:
+            print_and_speak("Adição de conhecimento cancelada.", "yellow")
+            conn_learn.close()
+            return
+
+    # Tenta sugerir categoria, area, topico
+    sug_cat_id, sug_area_id, sug_topic_id = suggest_category_area_topic(conn_learn, main_query)
+
+    # Coleta input do usuario para categorizacao
+    # Adicionando a capacidade de resposta por voz para os diálogos
+    
+    def get_input_dialog_or_voice(prompt_text, default_value=None, voice_prompt=None):
+        if voice_prompt is None:
+            voice_prompt = prompt_text
+        
+        if stt_enabled and voice_input_enabled:
+            igris_speak(voice_prompt)
+            spoken_response = listen_for_command(timeout_seconds=5, phrase_limit_seconds=4, is_activation_phrase=False)
+            if spoken_response.strip():
+                print_to_gui(f"Resposta por voz: {spoken_response}", "blue")
+                return spoken_response.strip()
+            else:
+                print_to_gui("Nenhuma resposta por voz detectada. Usando diálogo de texto.", "yellow")
+                return simpledialog.askstring("Adicionar Conhecimento", prompt_text, initialvalue=default_value)
+        else:
+            return simpledialog.askstring("Adicionar Conhecimento", prompt_text, initialvalue=default_value)
+
+    cat_name = get_input_dialog_or_voice(
+        f"Em qual Categoria você gostaria de adicionar este conhecimento?\n"
+        f"(Sugestão: {get_entity_name_by_id(conn_learn, 'categorias', sug_cat_id) or 'Nenhuma'})\n"
+        f"Digite 'listar categorias' no console se precisar de ajuda.",
+        default_value=get_entity_name_by_id(conn_learn, 'categorias', sug_cat_id),
+        voice_prompt=f"Em qual categoria você gostaria de adicionar este conhecimento? A sugestão é {get_entity_name_by_id(conn_learn, 'categorias', sug_cat_id) or 'nenhuma'}."
+    )
+    if not cat_name:
+        print_and_speak("Adição de conhecimento cancelada (categoria não fornecida).", "red")
+        conn_learn.close()
+        return
+    
+    cursor_learn = conn_learn.cursor()
+    cursor_learn.execute("INSERT OR IGNORE INTO categorias (nome, descricao) VALUES (?, ?)", (cat_name.capitalize(), 'Adicionada pelo usuário'))
+    conn_learn.commit()
+    cursor_learn.execute("SELECT id FROM categorias WHERE nome = ?", (cat_name.capitalize(),))
+    category_id = cursor_learn.fetchone()[0]
+
+    area_name = get_input_dialog_or_voice(
+        f"Em qual Área você gostaria de adicionar este conhecimento?\n"
+        f"(Sugestão: {get_entity_name_by_id(conn_learn, 'areas', sug_area_id) or 'Nenhuma'})\n"
+        f"Digite 'listar areas [categoria]' no console se precisar de ajuda.",
+        default_value=get_entity_name_by_id(conn_learn, 'areas', sug_area_id),
+        voice_prompt=f"Em qual área você gostaria de adicionar este conhecimento? A sugestão é {get_entity_name_by_id(conn_learn, 'areas', sug_area_id) or 'nenhuma'}."
+    )
+    if not area_name:
+        print_and_speak("Adição de conhecimento cancelada (área não fornecida).", "red")
+        conn_learn.close()
+        return
+
+    cursor_learn.execute("INSERT OR IGNORE INTO areas (nome, id_categoria, descricao) VALUES (?, ?, ?)", (area_name.capitalize(), category_id, 'Adicionada pelo usuário'))
+    conn_learn.commit()
+    cursor_learn.execute("SELECT id FROM areas WHERE nome = ? AND id_categoria = ?", (area_name.capitalize(), category_id))
+    area_id = cursor_learn.fetchone()[0]
+
+    topic_name = get_input_dialog_or_voice(
+        f"Em qual Tópico você gostaria de adicionar este conhecimento?\n"
+        f"(Sugestão: {get_entity_name_by_id(conn_learn, 'topicos', sug_topic_id) or 'Nenhum'})\n"
+        f"Digite 'listar topicos [area]' no console se precisar de ajuda.",
+        default_value=get_entity_name_by_id(conn_learn, 'topicos', sug_topic_id),
+        voice_prompt=f"Em qual tópico você gostaria de adicionar este conhecimento? A sugestão é {get_entity_name_by_id(conn_learn, 'topicos', sug_topic_id) or 'nenhum'}."
+    )
+    if not topic_name:
+        print_and_speak("Adição de conhecimento cancelada (tópico não fornecido).", "red")
+        conn_learn.close()
+        return
+    
+    cursor_learn.execute("INSERT OR IGNORE INTO topicos (nome, id_area, descricao) VALUES (?, ?, ?)", (topic_name.capitalize(), area_id, 'Adicionada pelo usuário'))
+    conn_learn.commit()
+    cursor_learn.execute("SELECT id FROM topicos WHERE nome = ? AND id_area = ?", (topic_name.capitalize(), area_id))
+    topic_id = cursor_learn.fetchone()[0]
+
+    keywords = get_input_dialog_or_voice(
+        "Digite palavras-chave separadas por vírgula (ex: 'tecnologia, IA, machine learning'):",
+        voice_prompt="Por favor, diga as palavras-chave separadas por vírgula."
+    )
+    if not keywords:
+        print_and_speak("Adição de conhecimento cancelada (palavras-chave não fornecidas).", "red")
+        conn_learn.close()
+        return
+
+    success = add_new_knowledge_to_db(conn_learn, category_id, area_id, topic_id, content_title, raw_content, keywords)
+    if success:
+        print_and_speak(f"Informação '{content_title}' adicionada com sucesso ao conhecimento da Igris!", "green")
+    else:
+        print_and_speak(f"Falha ao adicionar '{content_title}' ao conhecimento da Igris.", "red")
+    
+    conn_learn.close()
+
+def get_entity_name_by_id(conn, table_name, entity_id):
+    """Auxiliar para buscar o nome de uma entidade pelo ID."""
+    if entity_id is None:
+        return None
+    cursor = conn.cursor()
+    try:
+        cursor.execute(f"SELECT nome FROM {table_name} WHERE id = ?", (entity_id,))
+        result = cursor.fetchone()
+        return result[0] if result else None
+    except sqlite3.Error:
+        return None
+
+def comprehensive_search_and_learn(query):
+    """
+    Realiza uma pesquisa ampla na web e tenta aprender com os resultados.
+    """
+    global conn # Acessa a conexao do banco de dados principal
+    
+    print_and_speak(f"Não encontrei '{query}' em meu conhecimento interno. Posso tentar pesquisar na web e talvez aprender algo novo?", "magenta")
+    
+    confirm_search_voice = ""
+    if stt_enabled and voice_input_enabled:
+        confirm_search_voice = listen_for_command(timeout_seconds=3, phrase_limit_seconds=2, is_activation_phrase=False).lower()
+        if not is_confirmation(confirm_search_voice):
+            print_and_speak("Pesquisa e aprendizado cancelados.", "yellow")
+            return
+    else:
+        confirm_search = messagebox.askyesno("Pesquisar e Aprender",
+                                             f"Gostaria que a Igris pesquisasse sobre '{query}' na web e, se encontrar algo, me perguntasse se deve aprender?")
+        if not confirm_search:
+            print_and_speak("Pesquisa e aprendizado cancelados.", "yellow")
+            return
+
+    print_and_speak(f"Pesquisando na web por '{query}'...", "cyan")
+    
+    # Abrir o navegador para mostrar os resultados da pesquisa
+    search_web(query) # Já temos essa função
+
+    # Agora, tentaremos ir além e extrair conhecimento de uma fonte principal
+    # Para simplicidade, vamos pegar o primeiro resultado de busca do Google
+    # Isso é um desafio e pode não funcionar para todos os sites
+    print_and_speak("Tentando extrair conteúdo da primeira página de resultados de busca...", "cyan")
+
+    try:
+        # Usar uma URL de busca mais direta para tentar extrair
+        # NOTA: O Google pode bloquear bots. Isso é um exemplo simplificado.
+        # Em um sistema real, usaria uma API de busca ou web scraping mais sofisticado.
+        Google Search_url = f"https://www.google.com/search?q={urllib.parse.quote_plus(query)}"
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'}
+        response = requests.get(Google Search_url, headers=headers, timeout=10)
+        soup = BeautifulSoup(response.text, 'html.parser')
+
+        # Tentar encontrar o primeiro link de resultado de pesquisa relevante
+        first_link = soup.find('a', href=re.compile(r'^(https?://)(?!mail.google.com|accounts.google.com|support.google.com).*'))
+        if first_link and first_link.get('href'):
+            target_url = first_link['href']
+            print_to_gui(f"Encontrei um link potencial: {target_url}", "cyan")
+            raw_content = get_web_content(target_url)
+
+            if raw_content and len(raw_content) > 100: # Conteudo minimo para ser relevante
+                # Tenta sugerir um título a partir da query e do título da página
+                page_title_tag = soup.find('title')
+                content_title = page_title_tag.get_text() if page_title_tag else query.capitalize()
+
+                print_to_gui(f"\n--- Conteúdo Web Encontrado ---", "green")
+                print_to_gui(f"Título da Página: {content_title}", "yellow")
+                print_to_gui(f"URL: {target_url}", "yellow")
+                print_to_gui(f"Conteúdo Extraído (início): {raw_content[:500]}...", "cyan")
+                
+                # Chamada para confirmar e adicionar
+                confirm_and_add_knowledge(query, content_title, raw_content)
+            else:
+                print_and_speak("Não consegui extrair conteúdo relevante da página principal de resultados.", "yellow")
+        else:
+            print_and_speak("Não encontrei nenhum link relevante na página de resultados para aprender.", "yellow")
+
+    except Exception as e:
+        print_and_speak(f"Ocorreu um erro durante a tentativa de aprendizado web: {e}", "red")

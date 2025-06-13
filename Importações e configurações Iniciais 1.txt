@@ -1,0 +1,143 @@
+import sqlite3
+import os
+import subprocess
+import sys
+import platform
+import urllib.request
+import time
+import tkinter as tk
+from tkinter import scrolledtext, messagebox, simpledialog
+import webbrowser
+import json
+import re
+import datetime # Para o relógio offline
+
+# --- Novas importações para web scraping e análise ---
+try:
+    import requests
+    from bs4 import BeautifulSoup
+    web_analysis_enabled = True
+except ImportError:
+    print("As bibliotecas 'requests' e/ou 'BeautifulSoup' não foram encontradas. Tentando instalar...")
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "requests", "beautifulsoup4"])
+        import requests
+        from bs4 import BeautifulSoup
+        web_analysis_enabled = True
+        print("requests e beautifulsoup4 instaladas com sucesso!")
+    except Exception as e:
+        print(f"Erro ao instalar 'requests' e 'beautifulSoup4': {e}")
+        print("A funcionalidade de análise de conteúdo web estará limitada.")
+        web_analysis_enabled = False
+
+# --- Tenta importar colorama, pyttsx3, SpeechRecognition, instalando se necessario ---
+try:
+    from colorama import init, Fore, Style
+    init(autoreset=True)
+except ImportError:
+    print("A biblioteca 'colorama' não foi encontrada. Tentando instalar...")
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "colorama"])
+        from colorama import init, Fore, Style
+        init(autoreset=True)
+        print("colorama instalada com sucesso!")
+    except Exception as e:
+        print(f"Erro ao instalar 'colorama': {e}")
+        print("As cores no console podem não funcionar.")
+        class NoColor:
+            def __getattr__(self, name): return ""
+        Fore = NoColor()
+        Style = NoColor()
+
+# pyttsx3 e essencial para a voz (inicializado de forma mais controlada)
+engine = None
+tts_enabled = False
+try:
+    import pyttsx3
+    engine = pyttsx3.init()
+    engine.setProperty('rate', 160) # Ajustado para um pouco mais lento para firmeza
+    engine.setProperty('volume', 1.0) # Volume máximo
+    tts_enabled = True
+except ImportError:
+    print("A biblioteca 'pyttsx3' não foi encontrada. Tentando instalar...")
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "pyttsx3"])
+        import pyttsx3
+        engine = pyttsx3.init()
+        engine.setProperty('rate', 160)
+        engine.setProperty('volume', 1.0)
+        tts_enabled = True
+        print("pyttsx3 instalada com sucesso!")
+    except Exception as e:
+        print(f"Erro ao instalar 'pyttsx3': {e}")
+        print("A funcionalidade de voz estará desativada.")
+        tts_enabled = False
+except Exception as e:
+    print(f"Erro ao inicializar o motor de voz: {e}")
+    print("A funcionalidade de voz estará desativada.")
+    tts_enabled = False
+
+# SpeechRecognition para entrada de voz
+r = None
+stt_enabled = False
+try:
+    import speech_recognition as sr
+    r = sr.Recognizer()
+    stt_enabled = True
+    print("SpeechRecognition inicializado.")
+except ImportError:
+    print("A biblioteca 'SpeechRecognition' não foi encontrada. Tentando instalar...")
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "SpeechRecognition"])
+        import speech_recognition as sr
+        r = sr.Recognizer()
+        stt_enabled = True
+        print("SpeechRecognition instalada com sucesso!")
+    except Exception as e:
+        print(f"Erro ao instalar 'SpeechRecognition': {e}")
+        print("A funcionalidade de reconhecimento de voz estará desativada.")
+        stt_enabled = False
+except Exception as e:
+    print(f"Erro ao inicializar o SpeechRecognition: {e}")
+    print("A funcionalidade de reconhecimento de voz estará desativada.")
+    stt_enabled = False
+
+# PyAudio para acesso ao microfone (necessário para SpeechRecognition)
+if stt_enabled: # Só tenta instalar PyAudio se STT estiver habilitado
+    try:
+        import pyaudio # Verifica se PyAudio ja esta instalado
+    except ImportError:
+        print("A biblioteca 'PyAudio' não foi encontrada. Tentando instalar...")
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "PyAudio"])
+            import pyaudio
+            print("PyAudio instalada com sucesso!")
+        except Exception as e:
+            print(f"Erro ao instalar 'PyAudio': {e}")
+            print("Pode ser necessário instalá-la manualmente para usar o reconhecimento de voz.")
+            print("Consulte: https://pypi.org/project/PyAudio/")
+            stt_enabled = False # Desativa STT se PyAudio nao funcionar
+
+# --- Configurações Globais ---
+DATABASE_NAME = 'conhecimento.db'
+DATABASE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'database')
+DATABASE_PATH = os.path.join(DATABASE_DIR, DATABASE_NAME)
+USER_CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'user_config.txt')
+ADMIN_PASSWORD = "0610"
+
+# Variáveis globais
+user_name = "usuário"
+admin_mode_enabled = False
+speech_output_enabled = True # Controla se a Igris fala
+voice_input_enabled = True # SEMPRE LIGADO AGORA PARA ACESSO RÁPIDO
+selected_voice_id = None # Armazenara o ID da voz selecionada
+user_language = "pt-BR" # Idioma padrão do usuário
+
+# Variáveis para o relógio offline
+last_online_time_utc = None # UTC timestamp da ultima vez que a Igris obteve a hora online
+last_online_datetime = None # Objeto datetime correspondente
+
+# Variável para o estado de escuta da Igris (agora apenas para indicar que está "ouvindo" um comando após ativação)
+igris_listening_for_command = False
+# Variável para o estado de ativação da Igris (se ouviu "Igris")
+igris_activated = False

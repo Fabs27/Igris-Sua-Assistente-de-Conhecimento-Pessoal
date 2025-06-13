@@ -1,0 +1,294 @@
+# --- Funções de Utilitários e Setup (Adaptadas para Tkinter) ---
+
+def igris_speak(text, lang=None):
+    """Faz a Igris falar o texto, se a voz estiver habilitada."""
+    global engine, tts_enabled, selected_voice_id, user_language
+    if tts_enabled and speech_output_enabled and engine:
+        current_lang = lang if lang else user_language
+        
+        # Tenta encontrar uma voz que corresponda ao idioma, se user_language for diferente
+        if current_lang != "pt-BR" and engine:
+            voices = engine.getProperty('voices')
+            found_voice_for_lang = False
+            for voice in voices:
+                # Verifica o código completo (ex: 'en-US') ou apenas a parte principal (ex: 'en')
+                # Algumas vozes têm language codes como [b'en-US'], [b'pt-BR'], etc.
+                # Precisamos decodificar e verificar se o idioma está presente
+                try:
+                    decoded_languages = [l.decode('utf-8').lower() for l in voice.languages]
+                    if current_lang.lower() in decoded_languages or current_lang.split('-')[0].lower() in decoded_languages:
+                        engine.setProperty('voice', voice.id)
+                        found_voice_for_lang = True
+                        break
+                except Exception:
+                    pass # Ignora erros de decodificação
+            if not found_voice_for_lang and selected_voice_id: # Se nao achou voz no idioma e tem uma voz padrao salva
+                engine.setProperty('voice', selected_voice_id) # Volta para a voz padrao salva
+            elif not found_voice_for_lang and voices: # Se nao tem voz padrao salva, usa a primeira disponivel
+                engine.setProperty('voice', voices[0].id)
+        elif selected_voice_id: # Se for pt-BR ou nao especificou lingua, usa a voz selecionada
+            engine.setProperty('voice', selected_voice_id)
+
+        engine.say(text)
+        engine.runAndWait()
+
+def print_and_speak(text, color="white", lang=None):
+    """Imprime texto na GUI e faz a Igris falar."""
+    print_to_gui(text, color)
+    igris_speak(text, lang)
+
+def is_admin():
+    """Verifica se o script esta rodando com privilegios de administrador (apenas Windows)."""
+    if platform.system() == "Windows":
+        try:
+            return os.getuid() == 0
+        except AttributeError:
+            import ctypes
+            try:
+                return ctypes.windll.shell32.IsUserAnAdmin()
+            except:
+                return False
+    return True
+
+def check_and_create_dirs():
+    """Verifica e cria as pastas necessarias."""
+    print_to_gui(f"Verificando e criando pastas...")
+    if not os.path.exists(DATABASE_DIR):
+        os.makedirs(DATABASE_DIR)
+        print_to_gui(f"Pasta '{DATABASE_DIR}' criada.", "green")
+    # A pasta 'downloads' sera criada apenas quando a funcao download_file_from_url for chamada
+    print_to_gui(f"Pastas verificadas.", "cyan")
+
+def get_python_installer_url():
+    """Retorna a URL do instalador Python para a arquitetura do sistema."""
+    if platform.system() == "Windows":
+        if platform.architecture()[0] == "64bit":
+            # Verifique sempre a pagina oficial do Python para a URL mais recente
+            return "https://www.python.org/ftp/python/3.12.4/python-3.12.4-amd64.exe"
+        else:
+            return "https://www.python.org/ftp/python/3.12.4/python-3.12.4.exe"
+    return None
+
+def install_python_if_needed():
+    """Tenta instalar o Python se nao estiver presente."""
+    try:
+        subprocess.run([sys.executable, "--version"], check=True, capture_output=True)
+        print_to_gui(f"Python já está instalado. Versão: {sys.version.split(' ')[0]}", "green")
+        igris_speak("Python já está instalado e pronto para uso.")
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        print_to_gui(f"Python não encontrado. Tentando instalação automática...", "yellow")
+        igris_speak("Python não encontrado. Tentando instalação automática. Isso pode levar alguns minutos.")
+
+        if not is_admin():
+            print_to_gui(f"\n======================================================================\n", "red")
+            print_to_gui(f"AVISO: Para instalar o Python automaticamente, este programa precisa\n", "red")
+            print_to_gui(f"ser executado como ADMINISTRADOR.\n", "red")
+            print_to_gui(f"Por favor, clique com o botao direito no arquivo 'start.bat' e selecione:\n", "red")
+            print_to_gui(f"'Executar como administrador'\n", "red")
+            print_to_gui(f"======================================================================\n", "red")
+            igris_speak("Por favor, execute o start.bat como administrador para continuar.")
+            messagebox.showerror("Permissão Necessária", "Para instalar o Python, por favor, execute o 'start.bat' como administrador.")
+            return False
+
+        installer_url = get_python_installer_url()
+        if not installer_url:
+            print_to_gui(f"Não foi possível encontrar um instalador Python para este sistema operacional.", "red")
+            print_to_gui(f"Por favor, instale o Python manualmente de: https://www.python.org/downloads/", "yellow")
+            igris_speak("Não consegui encontrar um instalador compatível. Por favor, instale o Python manualmente.")
+            messagebox.showerror("Erro de Instalação", "Não foi possível encontrar um instalador Python para o seu sistema.")
+            return False
+
+        installer_name = os.path.basename(installer_url)
+        download_path = os.path.join(os.environ.get('TEMP', os.getcwd()), installer_name)
+
+        try:
+            print_to_gui(f"Baixando instalador do Python de: {installer_url}", "cyan")
+            urllib.request.urlretrieve(installer_url, download_path)
+            print_to_gui(f"Download concluído. Iniciando instalação silenciosa...", "cyan")
+
+            subprocess.run([download_path, "/quiet", "InstallAllUsers=1", "PrependPath=1"], check=True)
+
+            print_to_gui(f"Instalação do Python concluída. Verificando...", "cyan")
+            time.sleep(5)
+
+            try:
+                subprocess.run([sys.executable, "--version"], check=True, capture_output=True)
+                print_to_gui(f"Python instalado e configurado no PATH com sucesso!", "green")
+                igris_speak("Instalação do Python concluída com sucesso.")
+                return True
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                print_to_gui(f"ERRO: Python foi instalado, mas não foi adicionado ao PATH corretamente.", "red")
+                print_to_gui(f"Pode ser necessário reiniciar o CMD ou o computador, ou adicionar manualmente ao PATH.", "yellow")
+                print_to_gui(f"Ou instale manualmente de: https://www.python.org/downloads/", "yellow")
+                igris_speak("Houve um problema com a configuração do Python. Por favor, verifique a instalação.")
+                messagebox.showerror("Erro de Configuração", "Python instalado, mas não configurado corretamente no PATH.")
+                return False
+
+        except Exception as e:
+            print_to_gui(f"Erro durante a instalação do Python: {e}", "red")
+            print_to_gui(f"Por favor, instale o Python manualmente de: https://www.python.org/downloads/", "yellow")
+            igris_speak("Ocorreu um erro durante a instalação do Python. Por favor, instale-o manualmente.")
+            messagebox.showerror("Erro de Instalação", f"Erro: {e}\nPor favor, instale o Python manualmente.")
+            return False
+
+# --- Funções do Banco de Dados ---
+def connect_db():
+    conn = sqlite3.connect(DATABASE_PATH)
+    return conn
+
+def create_tables(conn):
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS categorias (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT NOT NULL UNIQUE,
+            descricao TEXT
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS areas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT NOT NULL UNIQUE,
+            id_categoria INTEGER,
+            descricao TEXT,
+            FOREIGN KEY (id_categoria) REFERENCES categorias(id)
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS topicos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT NOT NULL,
+            id_area INTEGER,
+            descricao TEXT,
+            FOREIGN KEY (id_area) REFERENCES areas(id)
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS conteudos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id_topico INTEGER,
+            tipo TEXT,
+            titulo TEXT,
+            conteudo TEXT,
+            palavras_chave TEXT,
+            FOREIGN KEY (id_topico) REFERENCES topicos(id)
+        )
+    ''')
+    conn.commit()
+    print_to_gui(f"Tabelas do banco de dados criadas ou já existentes.", "green")
+
+def insert_initial_data(conn):
+    cursor = conn.cursor()
+
+    categorias = [
+        ('Programação', 'Linguagens, algoritmos e desenvolvimento.'),
+        ('Pentest', 'Teste de intrusão, segurança ofensiva.'),
+        ('TI', 'Infraestrutura, redes, sistemas operacionais.'),
+        ('Descriptografia', 'Criptografia e quebra de códigos.'),
+        ('Games e Design', 'Desenvolvimento de jogos, design gráfico e UI/UX.'),
+        ('Eletrônica', 'Circuitos, componentes e sistemas eletrônicos.'),
+        ('Conhecimento Geral', 'Tópicos diversos e informações amplas.'),
+    ]
+    for nome, desc in categorias:
+        cursor.execute("INSERT OR IGNORE INTO categorias (nome, descricao) VALUES (?, ?)", (nome, desc))
+    conn.commit()
+
+    cursor.execute("SELECT id, nome FROM categorias")
+    categorias_ids = {nome: id for id, nome in cursor.fetchall()}
+
+    areas_data = [
+        ('C++', categorias_ids.get('Programação'), 'Linguagem de alto desempenho.'),
+        ('Python', categorias_ids.get('Programação'), 'Linguagem interpretada, versátil.'),
+        ('HTML', categorias_ids.get('Programação'), 'Linguagem de marcação web.'),
+        ('Arduino', categorias_ids.get('Programação'), 'Plataforma de prototipagem eletrônica.'),
+        ('Redes', categorias_ids.get('Pentest'), 'Varredura, sniffing, ataques de rede.'),
+        ('Web Hacking', categorias_ids.get('Pentest'), 'Vulnerabilidades em aplicações web.'),
+        ('Sistemas Operacionais', categorias_ids.get('TI'), 'Gerenciamento, comandos e estruturas.'),
+        ('Banco de Dados', categorias_ids.get('TI'), 'Estrutura e consulta de dados.'),
+        ('Criptografia Simétrica', categorias_ids.get('Descriptografia'), 'Algoritmos como AES e DES.'),
+        ('Assinaturas Digitais', categorias_ids.get('Descriptografia'), 'Verificação de autenticidade.'),
+        ('Game Design', categorias_ids.get('Games e Design'), 'Conceituação e mecânicas de jogos.'),
+        ('Modelagem 3D', categorias_ids.get('Games e Design'), 'Criação de modelos para jogos e animação.'),
+        ('Circuitos', categorias_ids.get('Eletrônica'), 'Análise e montagem de circuitos.'),
+        ('Componentes', categorias_ids.get('Eletrônica'), 'Diodos, transistores, resistores, capacitores.'),
+        ('História', categorias_ids.get('Conhecimento Geral'), 'Fatos históricos e eventos significativos.'),
+        ('Ciência', categorias_ids.get('Conhecimento Geral'), 'Conceitos e descobertas científicas.'),
+    ]
+    for nome, cat_id, desc in areas_data:
+        if cat_id:
+            cursor.execute("INSERT OR IGNORE INTO areas (nome, id_categoria, descricao) VALUES (?, ?, ?)", (nome, cat_id, desc))
+    conn.commit()
+
+    cursor.execute("SELECT id, nome FROM areas")
+    areas_ids = {nome: id for id, nome in cursor.fetchall()}
+
+    topicos_data = [
+        ('Variáveis', areas_ids.get('C++'), 'Tipos de dados e declaração.'),
+        ('Funções', areas_ids.get('C++'), 'Criação e uso de funções.'),
+        ('SQL Injection', areas_ids.get('Web Hacking'), 'Vulnerabilidade de injeção SQL.'),
+        ('XSS', areas_ids.get('Web Hacking'), 'Cross-Site Scripting.'),
+        ('Comandos Linux', areas_ids.get('Sistemas Operacionais'), 'Comandos básicos de terminal Linux.'),
+        ('AES', areas_ids.get('Criptografia Simétrica'), 'Advanced Encryption Standard.'),
+        ('Loop de Jogo', areas_ids.get('Game Design'), 'Estrutura fundamental de um jogo.'),
+        ('Resistores', areas_ids.get('Componentes'), 'Componentes que limitam a corrente.'),
+        ('Revolução Industrial', areas_ids.get('História'), 'Período de grandes mudanças tecnológicas.'),
+        ('Gravidade', areas_ids.get('Ciência'), 'Força fundamental que atrai objetos com massa.'),
+    ]
+    for nome, area_id, desc in topicos_data:
+        if area_id:
+            cursor.execute("INSERT OR IGNORE INTO topicos (nome, id_area, descricao) VALUES (?, ?, ?)", (nome, area_id, desc))
+    conn.commit()
+
+    cursor.execute("SELECT id, nome FROM topicos")
+    topicos_ids = {nome: id for id, nome in cursor.fetchall()}
+
+    var_cplusplus_id = topicos_ids.get('Variáveis')
+    if var_cplusplus_id:
+        cursor.execute("""
+            INSERT OR IGNORE INTO conteudos (id_topico, tipo, titulo, conteudo, palavras_chave) VALUES (?, ?, ?, ?, ?)
+        """, (var_cplusplus_id, 'explicacao', 'Declaração de Variáveis em C++',
+              'Em C++, você deve especificar o tipo de dado antes do nome da variável. Ex: `int idade = 30;`',
+              'c++, variavel, declarar, tipo'))
+        cursor.execute("""
+            INSERT OR IGNORE INTO conteudos (id_topico, tipo, titulo, conteudo, palavras_chave) VALUES (?, ?, ?, ?, ?)
+        """, (var_cplusplus_id, 'exemplo_codigo', 'Exemplo de uso de Variáveis em C++',
+              '```cpp\n#include <iostream>\n\nint main() {\n  int idade = 25;\n  double altura = 1.75;\n  char inicial = \'J\';\n  std::cout << "Idade: " << idade << "\\n";\n  std::cout << "Altura: " << altura << "\\n";\n  std::cout << "Inicial: " << inicial << "\\n";\n  return 0;\n}\n```',
+              'c++, variavel, exemplo'))
+    
+    sql_injection_id = topicos_ids.get('SQL Injection')
+    if sql_injection_id:
+        cursor.execute("""
+            INSERT OR IGNORE INTO conteudos (id_topico, tipo, titulo, conteudo, palavras_chave) VALUES (?, ?, ?, ?, ?)
+        """, (sql_injection_id, 'conceito', 'O que é SQL Injection?',
+              'SQL Injection é uma vulnerabilidade de segurança que permite a um atacante interferir nas consultas que uma aplicação faz ao seu banco de dados, podendo levar à exposição ou manipulação de dados.',
+              'pentest, sql, injection, vulnerabilidade, web hacking, segurança'))
+        cursor.execute("""
+            INSERT OR IGNORE INTO conteudos (id_topico, tipo, titulo, conteudo, palavras_chave) VALUES (?, ?, ?, ?, ?)
+        """, (sql_injection_id, 'exemplo_codigo', 'Payload Simples de SQL Injection',
+              'Exemplo de login vulnerável:\n`SELECT * FROM users WHERE username = \'admin\' AND password = \'password\'`\n\nIsso faria a consulta se tornar:\n`SELECT * FROM users WHERE username = \'admin\' AND password = \'\' OR \'1\'=\'1\'`\n\nQue sempre será verdadeira, logando o atacante.',
+              'pentest, sql, injection, exemplo, login, bypass'))
+
+    resistores_id = topicos_ids.get('Resistores')
+    if resistores_id:
+        cursor.execute("""
+            INSERT OR IGNORE INTO conteudos (id_topico, tipo, titulo, conteudo, palavras_chave) VALUES (?, ?, ?, ?, ?)
+        """, (resistores_id, 'explicacao', 'O que são Resistores?',
+              'Resistores são componentes eletrônicos passivos que implementam resistência elétrica em um circuito. Eles são usados para reduzir a corrente, dividir tensões ou terminar linhas de transmissão.',
+              'eletronica, resistor, componente, resistencia, circuito'))
+        cursor.execute("""
+            INSERT OR IGNORE INTO conteudos (id_topico, tipo, titulo, conteudo, palavras_chave) VALUES (?, ?, ?, ?, ?)
+        """, (resistores_id, 'formula', 'Lei de Ohm para Resistores',
+              'A Lei de Ohm descreve a relação entre tensão (V), corrente (I) e resistência (R):\n`V = I * R`\nOnde:\n`V` = Tensão em Volts (V)\n`I` = Corrente em Amperes (A)\n`R` = Resistência em Ohms (Ω)',
+              'eletronica, resistor, lei de ohm, formula, calculo'))
+
+    conn.commit()
+    print_to_gui(f"Dados iniciais inseridos ou já existentes.", "green")
+
+def populate_database():
+    """Conecta e popula o banco de dados."""
+    conn = connect_db()
+    create_tables(conn)
+    insert_initial_data(conn)
+    conn.close()
+    print_to_gui(f"Base de dados pronta.", "green")

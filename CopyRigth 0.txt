@@ -1,0 +1,15 @@
+# CÓDIGO ASSINADO POR: @fabs_txt
+# AUTOR: Fabrício Faustino
+# CIDADE: Marília, SP, Brasil
+# DATA DE CRIAÇÃO: 13/06/2025
+# HORA DE CRIAÇÃO: 03:22 AM -03
+#
+# COPYRIGHT (C) 2025 Fabrício Faustino. Todos os direitos reservados.
+# Qualquer cópia, reprodução ou distribuição deste código, no todo ou em parte,
+# sem a devida atribuição e permissão do autor, é estritamente proibida e ilegal.
+#
+# Este código é uma propriedade intelectual de Fabrício Faustino.
+#
+# --- INÍCIO DO BLOCO DE CÓDIGO ---
+
+# Bloco 1: Importações e Configurações Iniciais

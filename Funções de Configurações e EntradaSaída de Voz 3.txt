@@ -1,0 +1,136 @@
+# --- Funções para salvar/carregar as configurações do usuário ---
+def load_user_config():
+    global user_name, selected_voice_id, user_language, last_online_time_utc
+    try:
+        with open(USER_CONFIG_PATH, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+            user_name = config.get('user_name', "usuário")
+            selected_voice_id = config.get('selected_voice_id')
+            user_language = config.get('user_language', "pt-BR") # Carrega o idioma
+            # Carrega o timestamp da última sincronização online
+            last_online_time_utc_str = config.get('last_online_time_utc')
+            if last_online_time_utc_str:
+                last_online_time_utc = float(last_online_time_utc_str)
+            
+    except (FileNotFoundError, json.JSONDecodeError):
+        user_name = "usuário"
+        selected_voice_id = None
+        user_language = "pt-BR"
+        last_online_time_utc = None
+        save_user_config() # Salva a configuracao inicial se nao existir ou estiver corrompido
+    print_to_gui(f"Configurações do usuário carregadas. Nome: {user_name}, Voz: {selected_voice_id}, Idioma: {user_language}, Última sincronização online: {last_online_time_utc}", "cyan")
+
+def save_user_config():
+    config = {
+        'user_name': user_name,
+        'selected_voice_id': selected_voice_id,
+        'user_language': user_language,
+        'last_online_time_utc': str(last_online_time_utc) if last_online_time_utc else None
+    }
+    with open(USER_CONFIG_PATH, 'w', encoding='utf-8') as f:
+        json.dump(config, f, ensure_ascii=False, indent=4)
+    print_to_gui(f"Configurações do usuário salvas.", "green")
+
+# --- Funções de Lógica da Igris (adaptadas para a GUI) ---
+def toggle_admin_mode_gui():
+    global admin_mode_enabled
+    if admin_mode_enabled:
+        print_and_speak(f"Modo Admin já está ativo.", "green")
+        return
+
+    password = messagebox.askstring("Modo Admin", "Para ativar o Modo Admin, digite a senha:")
+    if password == ADMIN_PASSWORD:
+        admin_mode_enabled = True
+        print_and_speak(f"Modo Admin ativado! Restrições éticas removidas para melhor aprendizado. Use com sabedoria, {user_name}.", "red")
+    else:
+        print_and_speak(f"Senha incorreta. Modo Admin não ativado.", "red")
+
+def toggle_voice_output():
+    global speech_output_enabled
+    speech_output_enabled = not speech_output_enabled
+    status = "ativada" if speech_output_enabled else "desativada"
+    color = "green" if speech_output_enabled else "red"
+    print_and_speak(f"Voz da Igris {status}!", color)
+
+# A função toggle_voice_input foi removida ou simplificada pois voice_input_enabled agora é sempre True
+
+def listen_for_command(timeout_seconds=5, phrase_limit_seconds=5, is_activation_phrase=False):
+    global r, voice_input_enabled, user_language, igris_listening_for_command, igris_activated
+
+    if not stt_enabled or not voice_input_enabled:
+        return "" # Retorna string vazia se STT estiver desativado
+
+    root.title(f"Igris - Assistente de Conhecimento ({user_name}) - Escutando...")
+    if not is_activation_phrase: # Se não for a fase de ativação, mostra que está ouvindo o comando.
+        print_to_gui(f"Ouvindo comando...", "yellow")
+        igris_speak("Estou ouvindo.")
+    else: # Se for a fase de ativação, um texto mais sutil
+        print_to_gui(f"Aguardando palavra de ativação ('Igris')...", "yellow")
+    
+    with sr.Microphone() as source:
+        r.adjust_for_ambient_noise(source)
+        try:
+            audio = r.listen(source, timeout=timeout_seconds, phrase_time_limit=phrase_limit_seconds)
+        except sr.WaitTimeoutError:
+            if not is_activation_phrase:
+                print_to_gui("Nenhum comando de voz detectado.", "yellow")
+                igris_speak("Nenhum comando de voz detectado.")
+            return ""
+        except Exception as e:
+            print_to_gui(f"Erro ao ouvir: {e}", "red")
+            igris_speak("Ocorreu um erro ao ouvir.")
+            return ""
+
+    try:
+        command = ""
+        try:
+            command = r.recognize_google(audio, language=user_language)
+        except sr.UnknownValueError:
+            if user_language != "pt-BR": # Tenta pt-BR como fallback
+                command = r.recognize_google(audio, language="pt-BR")
+            else:
+                raise # Se ja tentou pt-BR e falhou, re-lanca
+        
+        print_to_gui(f"Você disse: {command}", "blue")
+
+        # Lógica de ativação por voz: verifica se "igris" está em qualquer parte da frase
+        if is_activation_phrase:
+            if "igris" in command.lower():
+                igris_activated = True
+                igris_speak("Sim?")
+                root.title(f"Igris - Assistente de Conhecimento ({user_name}) - Ativada")
+                print_to_gui("Igris ativada! Por favor, diga seu comando.", "green")
+                # Remove "igris" da frase de ativação para que o comando real seja processado
+                processed_command = command.lower().replace("igris", "").strip()
+                return processed_command # Retorna o comando limpo para processamento
+            else:
+                print_to_gui("Palavra de ativação não detectada.", "yellow")
+                return "" # Retorna vazio, não processa o comando
+
+        return command
+    except sr.UnknownValueError:
+        if not is_activation_phrase:
+            print_to_gui("Não consegui entender o que você disse.", "red")
+            igris_speak("Não consegui entender o que você disse.")
+        return ""
+    except sr.RequestError as e:
+        print_to_gui(f"Erro no serviço de reconhecimento de voz; {e}", "red")
+        if not is_activation_phrase:
+            igris_speak("Erro no serviço de reconhecimento de voz.")
+        return ""
+    finally:
+        # Reseta o título da janela para o estado padrão após escuta
+        root.title(f"Igris - Assistente de Conhecimento ({user_name})")
+        # Após cada ciclo de escuta (seja por ativação ou comando), o loop principal
+        # irá reiniciar a escuta da palavra de ativação.
+        pass
+
+def is_confirmation(text):
+    """Verifica se o texto indica uma confirmação flexível."""
+    text_lower = text.lower()
+    return any(word in text_lower for word in ["sim", "ok", "claro", "aceito", "quero", "pode", "certo", "beleza", "uhum", "yep", "yes", "confirmar", "com certeza", "bora"])
+
+def is_negation(text):
+    """Verifica se o texto indica uma negação flexível."""
+    text_lower = text.lower()
+    return any(word in text_lower for word in ["não", "nao", "negativo", "recuso", "parar", "cancelar", "nunca", "nem", "nop", "no", "desisto"])

@@ -1,0 +1,168 @@
+def start_listening_for_activation():
+    """Inicia o loop de escuta para a palavra de ativação 'Igris'."""
+    global igris_activated, stt_enabled, voice_input_enabled
+
+    if not stt_enabled or not voice_input_enabled:
+        return # Não faz nada se STT ou entrada de voz estiver desativada
+
+    # Resetar o estado de ativação
+    igris_activated = False
+    
+    # Iniciar a escuta em um thread separado para não bloquear a GUI
+    import threading
+    def listen_thread():
+        global igris_activated
+        while True: # Loop infinito para escuta contínua
+            if not igris_activated: # Só escuta por ativação se não estiver já ativada
+                # A função listen_for_command agora retorna o comando com "Igris" removido se ativada
+                command_after_activation = listen_for_command(timeout_seconds=None, phrase_limit_seconds=3, is_activation_phrase=True)
+                if igris_activated: # Se a ativação foi bem-sucedida
+                    if command_after_activation: # Se um comando foi capturado após a ativação
+                        # Enviar o comando para a fila de processamento da GUI
+                        root.after(10, lambda cmd=command_after_activation: process_command_internal(cmd))
+                    else:
+                        # Se não ouviu nada após ativação, volta a esperar a ativação
+                        igris_activated = False
+            time.sleep(0.1) # Pequena pausa para evitar consumo excessivo de CPU
+
+    listening_thread = threading.Thread(target=listen_thread, daemon=True)
+    listening_thread.start()
+
+# --- Função Principal da Igris (Inicializa GUI) ---
+def run_igris_gui():
+    global user_name, conn, root, output_area, input_entry, selected_voice_id, voice_input_enabled, user_language, last_online_time_utc
+
+    check_and_create_dirs()
+
+    if not install_python_if_needed():
+        sys.exit(1)
+
+    populate_database()
+
+    conn = connect_db()
+
+    load_user_config() # Carrega configuracoes (incluindo idioma e ultima hora online)
+
+    # Inicializa a interface gráfica o mais cedo possível para feedback
+    root = tk.Tk()
+    root.title(f"Igris - Assistente de Conhecimento ({user_name})")
+    root.geometry("800x650")
+    root.configure(bg="black")
+
+    output_area = scrolledtext.ScrolledText(root, wrap=tk.WORD, bg="black", fg="white", font=("Consolas", 12),
+                                            insertbackground="white", state='disabled')
+    output_area.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
+
+    output_area.tag_config("red", foreground="red")
+    output_area.tag_config("green", foreground="green")
+    output_area.tag_config("blue", foreground="blue")
+    output_area.tag_config("cyan", foreground="cyan")
+    output_area.tag_config("magenta", foreground="magenta")
+    output_area.tag_config("yellow", foreground="yellow")
+    output_area.tag_config("white", foreground="white")
+
+    input_frame = tk.Frame(root, bg="black")
+    input_frame.pack(padx=10, pady=(0, 10), fill=tk.X)
+
+    input_label = tk.Label(input_frame, text=f"{user_name} > ", bg="black", fg="blue", font=("Consolas", 12))
+    input_label.pack(side=tk.LEFT, pady=5)
+
+    input_entry = tk.Entry(input_frame, bg="#333333", fg="white", font=("Consolas", 12), insertbackground="white")
+    input_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, pady=5)
+    input_entry.bind("<Return>", lambda event=None: process_command_from_gui())
+
+    send_button = tk.Button(input_frame, text="Enviar", command=process_command_from_gui, bg="#005500", fg="white", font=("Consolas", 10))
+    send_button.pack(side=tk.RIGHT, padx=5, pady=5)
+
+    button_frame = tk.Frame(root, bg="black")
+    button_frame.pack(padx=10, pady=(0, 10), fill=tk.X)
+
+    tk.Button(button_frame, text="Ativar/Desativar Voz da Igris", command=toggle_voice_output, bg="#4CAF50", fg="white", font=("Consolas", 10)).pack(side=tk.LEFT, padx=5, pady=5)
+    tk.Button(button_frame, text="Pesquisar Web", command=lambda: print_to_gui("Use: 'pesquisar web [sua pergunta]'", "yellow"), bg="#FFC107", fg="black", font=("Consolas", 10)).pack(side=tk.LEFT, padx=5, pady=5)
+    tk.Button(button_frame, text="Baixar Arquivo", command=lambda: print_to_gui("Use: 'baixar https://www.clubedohardware.com.br/forums/topic/1238270-o-que-%C3%A9-um-arquivo-do-como-%C3%A9-poss%C3%ADvel-visualizar/'", "yellow"), bg="#9C27B0", fg="white", font=("Consolas", 10)).pack(side=tk.LEFT, padx=5, pady=5)
+    tk.Button(button_frame, text="Selecionar Voz", command=lambda: open_voice_selection_window(root), bg="#F44336", fg="white", font=("Consolas", 10)).pack(side=tk.LEFT, padx=5, pady=5)
+    tk.Button(button_frame, text="Mudar Idioma", command=lambda: print_and_speak("Use: 'idioma [código]' para mudar o idioma.", "yellow"), bg="#00BCD4", fg="white", font=("Consolas", 10)).pack(side=tk.LEFT, padx=5, pady=5)
+
+
+    # Início do diálogo com o usuário
+    if tts_enabled and engine:
+        all_voices = engine.getProperty('voices')
+        if not selected_voice_id or not any(v.id == selected_voice_id for v in all_voices):
+            igris_speak(f"Olá {user_name}, por favor, selecione a voz que você deseja para mim.")
+            open_voice_selection_window(root) # Passa 'root' agora que esta inicializado
+        else:
+            try:
+                engine.setProperty('voice', selected_voice_id)
+                greet_user() # Usa a nova função de saudação
+            except Exception as e:
+                print_to_gui(f"Erro ao carregar a voz salva: {e}. Abrindo seleção de voz.", "red")
+                selected_voice_id = None
+                igris_speak(f"Bem-vindo de volta, {user_name}! Houve um problema ao carregar minha voz anterior. Por favor, selecione uma nova voz para mim.")
+                open_voice_selection_window(root)
+    else:
+        print_to_gui(f"Bem-vindo(a) de volta, {user_name}!", "green")
+        print_to_gui(f"A Igris está pronta para te ajudar. (Funcionalidade de voz desativada)", "magenta")
+        greet_user() # Usa a nova função de saudação
+
+    # Se o nome do usuário ainda for o padrão, pergunta e salva
+    if user_name == "usuário":
+        igris_speak("Olá! Eu sou Igris, sua assistente de conhecimento. Como devo te chamar?")
+        if stt_enabled and voice_input_enabled:
+            print_to_gui("\nIgris: Como devo te chamar? (Diga seu nome)", "yellow")
+            # Escuta o nome sem precisar de ativação para essa pergunta inicial
+            spoken_name = listen_for_command(timeout_seconds=5, phrase_limit_seconds=3, is_activation_phrase=False)
+            if spoken_name:
+                user_name = spoken_name.strip().replace(".", "").replace(",", "").title()
+                save_user_config()
+                igris_speak(f"Entendido! Prazer em te conhecer, {user_name}.")
+            else:
+                name_input = messagebox.askstring("Bem-vindo à Igris", "Olá! Eu sou Igris, sua assistente de conhecimento. Como devo te chamar?")
+                if name_input and name_input.strip():
+                    user_name = name_input.strip()
+                    save_user_config()
+                    igris_speak(f"Entendido! Prazer em te conhecer, {user_name}.")
+                else:
+                    igris_speak("Usarei 'usuário' como seu nome. Você pode mudá-lo depois.")
+                    messagebox.showwarning("Nome Inválido", "Nenhum nome válido fornecido por voz ou texto. Usando 'usuário'.")
+        else:
+            name_input = messagebox.askstring("Bem-vindo à Igris", "Olá! Eu sou Igris, sua assistente de conhecimento. Como devo te chamar?")
+            if name_input and name_input.strip():
+                user_name = name_input.strip()
+                save_user_config()
+                igris_speak(f"Entendido! Prazer em te conhecer, {user_name}.")
+            else:
+                igris_speak("Usarei 'usuário' como seu nome. Você pode mudá-lo depois.")
+                messagebox.showwarning("Nome Inválido", "Nenhum nome válido fornecido. Usando 'usuário'.")
+
+    # Inicia o loop de escuta para "Igris" se o STT estiver habilitado
+    start_listening_for_activation()
+
+    print_to_gui("\nComandos:", "white")
+    print_to_gui("  - Para usar a voz: Diga 'Igris' (em qualquer parte da frase) e depois seu comando/pergunta.", "yellow")
+    print_to_gui("  - 'listar categorias'    : Mostra todas as categorias.", "yellow")
+    print_to_gui("  - 'listar areas [categoria]': Mostra as áreas de uma categoria.", "yellow")
+    print_to_gui("  - 'listar topicos [area]' : Mostra os tópicos de uma área.", "yellow")
+    print_to_gui("  - 'ver [topico]'         : Mostra o conteúdo de um tópico.", "yellow")
+    print_to_gui("  - '[palavra_chave]'      : Busca por palavras-chave em todo o conteúdo.", "yellow")
+    print_to_gui("  - 'admin'                : Ativa o modo admin (requer senha).", "yellow")
+    print_to_gui("  - 'voz [on/off]'         : Liga ou desliga a voz da Igris (ex: 'voz off').", "yellow")
+    print_to_gui("  - 'idioma [código]'      : Define o idioma da Igris (ex: 'idioma en-US').", "yellow")
+    print_to_gui("  - 'que horas são?'       : Informa a hora atual (sincroniza online).", "yellow")
+    print_to_gui("  - 'sincronizar hora'     : Tenta sincronizar o relógio da Igris com a internet.", "yellow")
+    print_to_gui("  - 'pesquisar web [termo]': Abre o navegador com sua pesquisa.", "yellow")
+    print_to_gui("  - 'baixar [URL]'         : Baixa um arquivo de uma URL.", "yellow")
+    print_to_gui("  - 'selecionar voz'       : Reabre a janela de seleção de voz.", "yellow")
+    print_to_gui("  - 'sair'                 : Fecha a Igris.", "yellow")
+    print_to_gui("\nSe a Igris não encontrar uma resposta, ela pode sugerir pesquisar na web e aprender o que encontrar!", "cyan")
+
+    # Tenta sincronizar a hora assim que a Igris iniciar (se houver conexão)
+    get_current_time_igris()
+
+    root.protocol("WM_DELETE_WINDOW", lambda: root.destroy())
+    root.mainloop()
+
+    if conn:
+        conn.close()
+
+if __name__ == "__main__":
+    run_igris_gui()

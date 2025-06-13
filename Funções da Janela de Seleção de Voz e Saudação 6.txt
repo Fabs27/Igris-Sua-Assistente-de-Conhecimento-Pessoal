@@ -1,0 +1,111 @@
+# --- Funções da Janela de Seleção de Voz ---
+def open_voice_selection_window(parent_root):
+    """Cria e exibe uma janela para seleção de voz."""
+    global engine, selected_voice_id, tts_enabled
+
+    if not tts_enabled or not engine:
+        messagebox.showerror("Erro de Voz", "O motor de voz não está disponível. Não é possível selecionar vozes.")
+        return
+
+    voice_window = tk.Toplevel(parent_root)
+    voice_window.title("Selecionar Voz da Igris")
+    voice_window.geometry("500x400")
+    voice_window.grab_set() # Bloqueia interacao com a janela principal
+
+    tk.Label(voice_window, text="Escolha a voz da Igris:", font=("Arial", 14)).pack(pady=10)
+
+    voices_frame = tk.Frame(voice_window)
+    voices_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+    canvas = tk.Canvas(voices_frame)
+    scrollbar = tk.Scrollbar(voices_frame, orient="vertical", command=canvas.yview)
+    scrollable_frame = tk.Frame(canvas)
+
+    scrollable_frame.bind(
+        "<Configure>",
+        lambda e: canvas.configure(
+            scrollregion=canvas.bbox("all")
+        )
+    )
+
+    canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+    canvas.configure(yscrollcommand=scrollbar.set)
+
+    canvas.pack(side="left", fill="both", expand=True)
+    scrollbar.pack(side="right", fill="y")
+
+    voices = engine.getProperty('voices')
+    current_selected_voice_tkvar = tk.StringVar(value=selected_voice_id if selected_voice_id else "")
+
+    def select_and_save_voice_from_gui(voice_id):
+        global selected_voice_id
+        selected_voice_id = voice_id
+        engine.setProperty('voice', voice_id)
+        igris_speak(f"Minha voz agora é essa.")
+        save_user_config()
+        messagebox.showinfo("Voz Selecionada", "Sua voz foi salva!")
+        voice_window.destroy()
+
+    def test_voice_from_gui(voice_id, voice_name):
+        engine.setProperty('voice', voice_id)
+        igris_speak(f"Olá, {user_name}. Eu sou Igris, e esta é a voz de {voice_name}.")
+
+    if not voices:
+        tk.Label(scrollable_frame, text="Nenhuma voz encontrada no seu sistema.", fg="red").pack(pady=20)
+    else:
+        for i, voice in enumerate(voices):
+            display_name = voice.name
+            # Tenta formatar nomes para exibição mais amigável
+            if "microsoft" in display_name.lower():
+                display_name = display_name.replace("Microsoft ", "").replace("Desktop", "").replace("Mobile", "")
+                if "zira" in display_name.lower(): display_name = display_name.replace("Zira", "Zira (Feminina, Inglês)")
+                if "david" in display_name.lower(): display_name = display_name.replace("David", "David (Masculina, Inglês)")
+                if "helia" in display_name.lower(): display_name = display_name.replace("Helia", "Helia (Feminina, Português)")
+                if "mark" in display_name.lower(): display_name = display_name.replace("Mark", "Mark (Masculina, Inglês)")
+            # Adiciona informações de idioma se disponivel
+            if voice.languages:
+                try:
+                    lang_codes = [l.decode('utf-8') for l in voice.languages]
+                    display_name += f" ({', '.join(lang_codes)})"
+                except:
+                    pass # Ignore decoding errors
+
+            frame_row = tk.Frame(scrollable_frame)
+            frame_row.pack(fill=tk.X, pady=2, padx=5)
+
+            tk.Radiobutton(frame_row, text=display_name, variable=current_selected_voice_tkvar,
+                           value=voice.id, command=lambda v_id=voice.id: engine.setProperty('voice', v_id)).pack(side=tk.LEFT)
+            
+            tk.Button(frame_row, text="Ouvir Amostra", command=lambda v_id=voice.id, v_name=display_name: test_voice_from_gui(v_id, v_name)).pack(side=tk.RIGHT)
+        
+        confirm_button = tk.Button(voice_window, text="Confirmar Seleção", command=lambda: select_and_save_voice_from_gui(current_selected_voice_tkvar.get()), bg="green", fg="white", font=("Arial", 12))
+        confirm_button.pack(pady=10)
+
+        if selected_voice_id:
+            try:
+                engine.setProperty('voice', selected_voice_id)
+                current_selected_voice_tkvar.set(selected_voice_id)
+            except Exception as e:
+                print(f"Voz salva '{selected_voice_id}' nao encontrada ou invalida: {e}. Revertendo para padrao.")
+                selected_voice_id = None
+                messagebox.showwarning("Voz Inválida", "A voz salva anteriormente não foi encontrada ou é inválida. Por favor, selecione uma nova voz.")
+                engine.setProperty('voice', voices[0].id if voices else None)
+                current_selected_voice_tkvar.set(voices[0].id if voices else "")
+        elif voices:
+            engine.setProperty('voice', voices[0].id)
+            current_selected_voice_tkvar.set(voices[0].id)
+
+    voice_window.transient(parent_root)
+    voice_window.wait_window()
+
+def greet_user():
+    """Cumprimenta o usuário com base na hora do dia."""
+    current_hour = datetime.datetime.now().hour
+    if 5 <= current_hour < 12:
+        greeting = "Bom dia"
+    elif 12 <= current_hour < 18:
+        greeting = "Boa tarde"
+    else:
+        greeting = "Boa noite"
+    
+    print_and_speak(f"{greeting}, {user_name}! A Igris está pronta para te ajudar. Diga 'Igris' para me ativar e depois seu comando, ou digite abaixo.", "green")

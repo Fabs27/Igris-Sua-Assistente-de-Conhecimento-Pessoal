@@ -1,0 +1,160 @@
+def get_current_time_online():
+    """Tenta obter a hora atual de um serviço online."""
+    try:
+        response = requests.get("http://worldtimeapi.org/api/ip", timeout=5)
+        response.raise_for_status()
+        data = response.json()
+        utc_datetime_str = data['utc_datetime']
+        # Parse ISO 8601 string, handle milliseconds if present
+        if '.' in utc_datetime_str:
+            dt_object = datetime.datetime.strptime(utc_datetime_str, "%Y-%m-%dT%H:%M:%S.%f%z")
+        else:
+            dt_object = datetime.datetime.strptime(utc_datetime_str, "%Y-%m-%dT%H:%M:%S%z")
+        
+        # Converte para o fuso horário local ou armazena UTC e calcula offset ao exibir
+        # Para simplicidade, vamos armazenar o timestamp UTC e o objeto datetime UTC
+        return dt_object.timestamp(), dt_object # Retorna timestamp e objeto datetime
+    except requests.exceptions.RequestException as e:
+        print_to_gui(f"Erro ao obter hora online: {e}", "red")
+        return None, None
+    except Exception as e:
+        print_to_gui(f"Erro ao processar dados de hora online: {e}", "red")
+        return None, None
+
+def get_current_time_igris():
+    """Obtém a hora usando o relógio offline da Igris."""
+    global last_online_time_utc, last_online_datetime
+    
+    # Tenta sincronizar se estiver online e ainda não sincronizou ou se faz muito tempo (ex: 1 hora)
+    if web_analysis_enabled and (last_online_time_utc is None or (time.time() - last_online_time_utc > 3600)):
+        print_to_gui("Tentando sincronizar o relógio com a internet...", "yellow")
+        new_utc_timestamp, new_dt_object = get_current_time_online()
+        if new_utc_timestamp:
+            last_online_time_utc = new_utc_timestamp
+            last_online_datetime = new_dt_object
+            save_user_config()
+            print_to_gui("Relógio sincronizado com a internet.", "green")
+            
+    if last_online_time_utc is not None and last_online_datetime is not None:
+        elapsed_seconds = time.time() - last_online_time_utc
+        current_time_offline = last_online_datetime + datetime.timedelta(seconds=elapsed_seconds)
+        
+        if web_analysis_enabled and (time.time() - last_online_time_utc < 60): # Se sincronizou ha pouco tempo
+            print_and_speak(f"A hora atual é {current_time_offline.strftime('%H:%M:%S')}. (Sincronizado recentemente)", "white")
+        else:
+            last_sync_display = datetime.datetime.fromtimestamp(last_online_time_utc).strftime('%d/%m/%Y às %H:%M:%S')
+            print_and_speak(f"A hora aproximada é {current_time_offline.strftime('%H:%M:%S')}. (Baseado na última sincronização online em {last_sync_display})", "yellow")
+    else:
+        print_and_speak("Não consegui sincronizar o relógio com a internet ainda. Por favor, verifique sua conexão.", "red")
+        print_to_gui("Tente 'sincronizar hora' para tentar novamente.", "yellow")
+
+# --- Funções da Interface Gráfica (Tkinter) ---
+def print_to_gui(text, color="white"):
+    """Imprime texto na area de saida da GUI com cores."""
+    output_area.config(state='normal')
+    output_area.insert(tk.END, text + "\n", color)
+    output_area.config(state='disabled')
+    output_area.see(tk.END) # Auto-scroll para o final
+
+def process_command_from_gui():
+    """Função wrapper para processar o comando da GUI, agora com a lógica de ativação."""
+    global igris_activated
+    command = input_entry.get().strip()
+    input_entry.delete(0, tk.END)
+
+    if not command:
+        return
+
+    # Comandos digitados sempre processam como se a Igris estivesse "ativa"
+    # A palavra de ativação "Igris" não é necessária em comandos digitados.
+    print_to_gui(f"\n{user_name} (Digitado) > {command}", "blue")
+    process_command_internal(command)
+    igris_activated = False # Reseta a ativação após o comando digitado
+
+def process_command_internal(command):
+    """Processa o comando digitado ou falado pelo usuario."""
+    global user_name, admin_mode_enabled, speech_output_enabled, voice_input_enabled, conn, user_language
+
+    command_lower = command.lower()
+
+    if command_lower == 'sair':
+        print_and_speak(f"A Igris se despede por enquanto, {user_name}. Até a próxima!", "magenta")
+        root.after(1000, root.destroy)
+        return
+    elif command_lower == 'admin':
+        toggle_admin_mode_gui()
+    elif command_lower.startswith('voz '):
+        voice_status = command_lower[len('voz '):].strip()
+        if voice_status == 'on':
+            speech_output_enabled = True
+            print_and_speak(f"Voz da Igris ativada!", "green")
+        elif voice_status == 'off':
+            speech_output_enabled = False
+            print_to_gui(f"Voz da Igris desativada.", "red") # Não fala, pois a voz foi desativada
+        else:
+            print_and_speak(f"Comando 'voz' inválido. Use 'voz on' ou 'voz off'.", "yellow")
+    elif command_lower.startswith('idioma '):
+        new_lang = command_lower[len('idioma '):].strip()
+        # Validação simples de idioma (poderia ser mais robusta)
+        if new_lang in ["pt-br", "en-us", "es-es", "fr-fr"]: # Exemplos de idiomas suportados pelo Google Speech
+            user_language = new_lang
+            save_user_config()
+            print_and_speak(f"Idioma definido para: {user_language}", "green")
+            # Tenta encontrar uma voz para o novo idioma e testa
+            igris_speak("Esta é uma amostra da minha voz no novo idioma.", lang=user_language)
+        else:
+            print_and_speak("Idioma não suportado ou formato inválido. Tente 'pt-BR', 'en-US', 'es-ES', 'fr-FR'.", "yellow")
+    elif command_lower == 'listar categorias':
+        show_all_categories(conn)
+    elif command_lower.startswith('listar areas '):
+        category_name = command_lower[len('listar areas '):].strip()
+        if category_name:
+            show_areas_by_category(conn, category_name)
+        else:
+            print_and_speak(f"Por favor, especifique uma categoria (ex: 'listar areas programacao').", "red")
+    elif command_lower.startswith('listar topicos '):
+        area_name = command_lower[len('listar topicos '):].strip()
+        if area_name:
+            show_topics_by_area(conn, area_name)
+        else:
+            print_and_speak(f"Por favor, especifique uma área (ex: 'listar topicos c++').", "red")
+    elif command_lower.startswith('ver '):
+        topic_name = command_lower[len('ver '):].strip()
+        if topic_name:
+            show_content_by_topic(conn, topic_name)
+        else:
+            print_and_speak(f"Por favor, especifique um tópico (ex: 'ver variaveis').", "red")
+    elif command_lower.startswith('pesquisar web '):
+        query = command[len('pesquisar web '):].strip()
+        if query:
+            search_web(query)
+        else:
+            print_and_speak("Por favor, especifique o que você quer pesquisar na web (ex: 'pesquisar web python tutorial').", "yellow")
+    elif command_lower.startswith('baixar '):
+        url = command[len('baixar '):].strip()
+        if url:
+            download_file_from_url(url)
+        else:
+            print_and_speak("Por favor, especifique a URL do arquivo para baixar (ex: 'baixar https://example.com/file.zip').", "yellow")
+    elif command_lower == 'selecionar voz':
+        if tts_enabled and engine:
+            open_voice_selection_window(root)
+        else:
+            print_and_speak("Funcionalidade de voz não disponível para seleção.", "red")
+    elif "que horas são" in command_lower or "horas" == command_lower or "horário" == command_lower:
+        get_current_time_igris()
+    elif "sincronizar hora" in command_lower:
+        print_to_gui("Tentando sincronizar a hora agora...", "yellow")
+        new_utc_timestamp, new_dt_object = get_current_time_online()
+        if new_utc_timestamp:
+            global last_online_time_utc, last_online_datetime
+            last_online_time_utc = new_utc_timestamp
+            last_online_datetime = new_dt_object
+            save_user_config()
+            print_and_speak("Relógio sincronizado com sucesso!", "green")
+        else:
+            print_and_speak("Não foi possível sincronizar a hora. Verifique sua conexão com a internet.", "red")
+    else:
+        # Se nao encontrar no conhecimento interno, tenta pesquisa ampla e aprendizado
+        if not search_knowledge(conn, command):
+            comprehensive_search_and_learn(command) # Chama a nova funcao de busca ampla e aprendizado

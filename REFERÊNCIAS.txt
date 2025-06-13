@@ -1,0 +1,37 @@
+1 REFERÊNCIAS
+A Igris, como uma assistente de conhecimento, baseia-se em diversas fontes e tecnologias. As principais "referências" que sustentam seu funcionamento e a inclusão de dados em sua base de conhecimento, além do próprio código-fonte, seriam:
+ * Python: A linguagem de programação utilizada no desenvolvimento da Igris.
+   PYTHON SOFTWARE FOUNDATION. Python Language Reference. Disponível em: https://www.python.org/. Acesso em: 13 jun. 2025.
+ * SQLite: O sistema gerenciador de banco de dados leve e embarcado utilizado para armazenar o conhecimento da Igris.
+   SQLITE. SQLite Home Page. Disponível em: https://www.sqlite.org/. Acesso em: 13 jun. 2025.
+ * PyTTSX3: Biblioteca de síntese de voz (Text-to-Speech) para Python.
+   [NOME DO AUTOR/CONTRIBUIDOR DE PYTTSX3]. PyTTSX3: cross-platform text-to-speech. Disponível em: https://pypi.org/project/pyttsx3/. Acesso em: 13 jun. 2025. (Nota: O autor específico ou a data de publicação original da biblioteca podem variar e devem ser verificados no PyPI ou na documentação oficial).
+ * SpeechRecognition: Biblioteca para reconhecimento de fala em Python.
+   [NOME DO AUTOR/CONTRIBUIDOR DE SPEECHRECOGNITION]. SpeechRecognition. Disponível em: https://pypi.org/project/SpeechRecognition/. Acesso em: 13 jun. 2025. (Nota: O autor específico ou a data de publicação original da biblioteca podem variar e devem ser verificados no PyPI ou na documentação oficial).
+ * Requests: Biblioteca HTTP para Python, usada para fazer requisições web.
+   THE PYTHON SOFTWARE FOUNDATION. Requests: HTTP for Humans™. Disponível em: https://requests.readthedocs.io/en/latest/. Acesso em: 13 jun. 2025.
+ * BeautifulSoup4: Biblioteca para extração de dados de arquivos HTML e XML (web scraping).
+   RICHARDSON, Leonard. Beautiful Soup Documentation. Disponível em: https://www.crummy.com/software/BeautifulSoup/bs4/doc/. Acesso em: 13 jun. 2025.
+ * Colorama: Biblioteca para estilizar a saída do console com cores.
+   [NOME DO AUTOR/CONTRIBUIDOR DE COLORAMA]. Colorama. Disponível em: https://pypi.org/project/colorama/. Acesso em: 13 jun. 2025. (Nota: O autor específico ou a data de publicação original da biblioteca podem variar e devem ser verificados no PyPI ou na documentação oficial).
+ * PyAudio: Biblioteca Python para tocar e gravar áudio via PortAudio.
+   [NOME DO AUTOR/CONTRIBUIDOR DE PYAUDIO]. PyAudio. Disponível em: https://pypi.org/project/PyAudio/. Acesso em: 13 jun. 2025. (Nota: O autor específico ou a data de publicação original da biblioteca podem variar e devem ser verificados no PyPI ou na documentação oficial).
+ * World Time API: Serviço online para obter a hora mundial, usado pelo relógio offline da Igris.
+   WORLDTIMEAPI. World Time API. Disponível em: http://worldtimeapi.org/. Acesso em: 13 jun. 2025.
+2 PALAVRAS-CHAVE E HASHTAGS
+As "hashtags" em um contexto de GitHub README ou de projeto de software funcionam como palavras-chave para indexação e visibilidade. Elas descrevem os temas principais do projeto e seriam utilizadas em buscadores ou plataformas. Abaixo, uma lista de palavras-chave relevantes para o projeto Igris:
+ * Inteligência Artificial
+ * Assistente de Conhecimento
+ * Processamento de Linguagem Natural (PLN)
+ * Reconhecimento de Fala
+ * Síntese de Voz
+ * Python
+ * SQLite
+ * GUI (Interface Gráfica do Usuário)
+ * Automação
+ * Web Scraping
+ * Educação
+ * Ferramentas de Estudo
+ * Código Aberto (Open Source)
+ * Produtividade
+ * Assistente Pessoal
